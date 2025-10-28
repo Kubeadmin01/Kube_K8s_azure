@@ -1,40 +1,49 @@
-name: 'Terraform Deploy to Azure'
+name: Terraform AKS Deploy
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   terraform:
-    name: 'Terraform'
     runs-on: ubuntu-latest
 
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
     steps:
-      - name: 'Checkout Code'
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: 'Set up Terraform'
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Show secret env keys (debug only)
-        run: |
-          echo "Available secrets:"
-          env | grep AZURE
-      - name: 'Azure Login'
-        uses: azure/login@v1
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          terraform_version: 1.5.6
 
-      - name: 'Terraform Init'
+      - name: Terraform Init
         run: terraform init
 
-      - name: 'Terraform Validate'
+      - name: Terraform Validate
         run: terraform validate
 
-      - name: 'Terraform Plan'
-        run: terraform plan 
+      - name: Terraform Plan
+        run: terraform plan -var-file="k8s.tfvars" -out="main.tfplan"
 
-      - name: 'Terraform Apply'
-        if: github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve
+      - name: Upload plan artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-tfplan
+          path: main.tfplan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: terraform apply -auto-approve "main.tfplan"
